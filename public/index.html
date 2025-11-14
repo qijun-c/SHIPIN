@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>在线云盘播放器</title>
+<style>
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;background:#0b1220;color:#e6e6e6}
+ .card{max-width:980px;margin:0 auto;background:#121a2b;border:1px solid #223355;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden}
+ header{padding:18px 20px;border-bottom:1px solid #223355;display:flex;align-items:center;gap:12px}
+ header h1{font-size:18px;margin:0}
+ main{display:grid;grid-template-columns:360px 1fr;gap:0;min-height:560px}
+ .left{border-right:1px solid #223355}
+ .section{padding:18px 20px}
+ label{display:block;font-size:12px;color:#9fb0d0;margin-bottom:6px}
+ input,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3b5a;background:#0e1526;color:#e6e6e6}
+ input:focus{outline:none;border-color:#3e63dd;box-shadow:0 0 0 3px rgba(62,99,221,.25)}
+ button{cursor:pointer;background:#3e63dd;border:1px solid #3154c2;font-weight:600}
+ button:hover{background:#3458d4}
+ .row{display:grid;grid-template-columns:1fr auto;gap:10px}
+ .list{padding:0;margin:0;list-style:none;max-height:320px;overflow:auto;border:1px solid #223355;border-radius:10px}
+ .item{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #18223a}
+ .item:last-child{border-bottom:0}
+ .item button{width:auto;padding:6px 10px;border-radius:8px}
+ .empty{color:#8aa0c8;font-size:13px}
+ video{width:100%;height:100%;background:#000;aspect-ratio:16/9}
+ .tips{font-size:12px;color:#9fb0d0;line-height:1.5}
+ .error{color:#ff6b6b;margin-top:8px;font-size:13px}
+ .ok{color:#4fd1a5;margin-top:8px;font-size:13px}
+ @media (max-width:980px){ main{grid-template-columns:1fr} .left{border-right:0;border-bottom:1px solid #223355} }
+</style>
+</head>
+<body>
+<div class="card">
+  <header>
+    <h1>在线云盘播放器（Baidu Share）</h1>
+  </header>
+  <main>
+    <div class="left">
+      <div class="section">
+        <label>分享链接</label>
+        <input id="link" placeholder="如：https://pan.baidu.com/s/1abcDEF 或直接粘贴整段分享文案" />
+      </div>
+      <div class="section">
+        <label>提取码（如有）</label>
+        <div class="row">
+          <input id="pwd" placeholder="4位提取码，可留空" />
+          <button id="parseBtn">解析</button>
+        </div>
+        <div id="msg" class="tips" style="margin-top:8px"></div>
+      </div>
+      <div class="section">
+        <label>视频文件</label>
+        <ul id="list" class="list"></ul>
+        <div id="empty" class="empty" style="display:none">暂无可播放视频，请确认分享是否包含视频或是否需要提取码</div>
+      </div>
+      <div class="section">
+        <div class="tips">提示：播放需要在 Cloudflare 中配置环境变量 <b>BDUSS</b>。未配置时只能列出文件，无法播放。</div>
+      </div>
+    </div>
+    <div class="section" style="display:flex;flex-direction:column;gap:12px">
+      <video id="player" controls preload="metadata"></video>
+      <div id="playMsg" class="tips"></div>
+    </div>
+  </main>
+</div>
+<script>
+function extractSurl(text){
+  if(!text) return '';
+  const m1=text.match(/pan\.baidu\.com\/(?:s|share)\/(?:1|s\w)?([^\s?&#]+)/i); if(m1) return m1[1];
+  const m2=text.match(/surl=([\w-]+)/i); if(m2) return m2[1];
+  const m3=text.match(/([\w-]{6,})/); if(m3) return m3[1];
+  return text.trim();
+}
+async function fetchList(){
+  const link=document.getElementById('link').value.trim();
+  const pwd=document.getElementById('pwd').value.trim();
+  const msg=document.getElementById('msg');
+  msg.textContent='解析中…';
+  const res=await fetch('/api/list',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({link,pwd})});
+  if(!res.ok){msg.innerHTML='<span class="error">解析失败 '+res.status+'</span>';return}
+  const data=await res.json();
+  if(data.errno!==0){msg.innerHTML='<span class="error">'+(data.message||'解析失败')+'</span>';return}
+  msg.innerHTML='<span class="ok">已解析：'+data.total+' 个文件，视频 '+data.videos.length+' 个</span>';
+  const list=document.getElementById('list'); list.innerHTML='';
+  const empty=document.getElementById('empty');
+  if(!data.videos.length){empty.style.display='block';return}else empty.style.display='none';
+  data.videos.forEach(f=>{
+    const li=document.createElement('li'); li.className='item';
+    const title=document.createElement('div'); title.textContent=f.server_filename+' ('+formatSize(f.size)+')';
+    const btn=document.createElement('button'); btn.textContent='播放'; btn.onclick=()=>playFile(data.share.surl,f.fs_id,document.getElementById('pwd').value.trim());
+    li.appendChild(title); li.appendChild(btn); list.appendChild(li);
+  });
+}
+function formatSize(n){if(n<1024) return n+'B'; if(n<1024*1024) return (n/1024).toFixed(1)+'KB'; if(n<1024*1024*1024) return (n/1024/1024).toFixed(1)+'MB'; return (n/1024/1024/1024).toFixed(2)+'GB'}
+async function playFile(surl,fs_id,pwd){
+  const player=document.getElementById('player');
+  const playMsg=document.getElementById('playMsg');
+  playMsg.textContent='请求直链…';
+  const u=new URL('/api/stream',location.origin);
+  u.searchParams.set('surl',surl); u.searchParams.set('fs_id',fs_id); if(pwd) u.searchParams.set('pwd',pwd);
+  player.src=u.toString(); player.play().catch(()=>{});
+  playMsg.textContent='';
+}
+ document.getElementById('parseBtn').addEventListener('click',fetchList);
+</script>
+</body>
+</html>
