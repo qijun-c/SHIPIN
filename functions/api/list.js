@@ -1,14 +1,18 @@
 export async function onRequestPost(context){
   const { request, env } = context;
-  const { link, pwd = "", dir = "/" } = await request.json();
+  const { link, pwd = "", dir = "/", bduss: bdussClient = "", bdclnd: bdclndClient = "", randsk: randskClient = "", sekey: sekeyClient = "" } = await request.json();
   const surl = extractSurl(link||"");
   const surlToken = surl.replace(/^1/, "");
   if(!surl) return json({errno:400,message:"invalid surl"},400);
   const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
   let cookies = "";
-  const BDUSS = (env && env.BDUSS) ? `BDUSS=${env.BDUSS}` : "";
+  const BDUSS_ENV = (env && env.BDUSS) ? `BDUSS=${env.BDUSS}` : "";
+  const BDUSS_CLIENT = bdussClient ? (bdussClient.startsWith('BDUSS=')? bdussClient : `BDUSS=${bdussClient}`) : "";
+  const BDUSS = BDUSS_CLIENT || BDUSS_ENV;
   if(BDUSS) cookies = mergeCookie(cookies, BDUSS);
   let randsk = "";
+  if (bdclndClient) cookies = mergeCookie(cookies, bdclndClient.startsWith('BDCLND=')? bdclndClient : `BDCLND=${bdclndClient}`);
+  if (randskClient) cookies = mergeCookie(cookies, `BDCLND=${encodeURIComponent(randskClient)}`);
   if(pwd){
     const v = await verifyPwd(surl,pwd,ua,cookies);
     if(v.errno!==0) return json({errno:v.errno,message:v.message||"verify failed", stage:"verify"},400);
@@ -49,8 +53,12 @@ export async function onRequest(context){
     const link = url.searchParams.get('link') || url.searchParams.get('surl') || '';
     const pwd = url.searchParams.get('pwd') || '';
     const dir = url.searchParams.get('dir') || '/';
+    const bduss = url.searchParams.get('bduss') || '';
+    const bdclnd = url.searchParams.get('bdclnd') || '';
+    const randsk = url.searchParams.get('randsk') || '';
+    const sekey = url.searchParams.get('sekey') || '';
     // Reuse the same logic by faking a POST body
-    const fake = new Request(request.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({link,pwd,dir})});
+    const fake = new Request(request.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({link,pwd,dir,bduss,bdclnd,randsk,sekey})});
     return onRequestPost({ ...context, request: fake });
   }
   return new Response('method not allowed',{status:405,headers:{"access-control-allow-origin":"*"}});
