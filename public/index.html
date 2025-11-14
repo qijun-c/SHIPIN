@@ -72,6 +72,16 @@ function extractSurl(text){
   const m3=text.match(/([\w-]{6,})/); if(m3) return m3[1];
   return text.trim();
 }
+function extractPwd(text){
+  if(!text) return '';
+  const t = text.replace(/\s+/g,' ');
+  const pats=[
+    /(?:提取码|密码|提取碼|密碼|pwd|pass)[：: ]\s*([a-zA-Z0-9]{4})/i,
+    /码[:： ]\s*([a-zA-Z0-9]{4})/i
+  ];
+  for(const re of pats){ const m=re.exec(t); if(m) return m[1]; }
+  return '';
+}
 async function apiList(link,pwd){
   const payload={link,pwd};
   try{
@@ -92,7 +102,8 @@ async function apiList(link,pwd){
 }
 async function fetchList(){
   const link=document.getElementById('link').value.trim();
-  const pwd=document.getElementById('pwd').value.trim();
+  let pwd=document.getElementById('pwd').value.trim();
+  if(!pwd){ const auto=extractPwd(link); if(auto){ pwd=auto; document.getElementById('pwd').value=auto; } }
   const msg=document.getElementById('msg');
   msg.textContent='解析中…';
   const {res,data,json}=await (async()=>{ const r=await apiList(link,pwd); return {res:r.res,data:r.json,json:r.json}; })();
