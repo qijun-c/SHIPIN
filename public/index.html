@@ -55,6 +55,22 @@
         <div id="empty" class="empty" style="display:none">暂无可播放视频，请确认分享是否包含视频或是否需要提取码</div>
       </div>
       <div class="section">
+        <div class="row" style="grid-template-columns:1fr auto;align-items:center">
+          <label style="margin:0">高级选项（可选）</label>
+          <button id="advToggle" type="button" style="width:auto">展开</button>
+        </div>
+        <div id="adv" style="display:none; margin-top:10px; display:grid; gap:10px">
+          <div>
+            <label>BDUSS（用于更稳的访问与播放，建议SVIP）</label>
+            <input id="adv_bduss" placeholder="仅在本地临时使用，不会存储" />
+          </div>
+          <div>
+            <label>BDCLND / randsk（通过浏览器登录分享后复制，二选一其一即可）</label>
+            <input id="adv_bdclnd" placeholder="如：BDCLND=xxxx 或直接粘贴值" />
+          </div>
+        </div>
+      </div>
+      <div class="section">
         <div class="tips">提示：播放需要在 Cloudflare 中配置环境变量 <b>BDUSS</b>。未配置时只能列出文件，无法播放。</div>
       </div>
     </div>
@@ -83,7 +99,10 @@ function extractPwd(text){
   return '';
 }
 async function apiList(link,pwd){
-  const payload={link,pwd};
+  const adv_bduss=document.getElementById('adv_bduss')?.value.trim()||'';
+  const adv_bdclnd_raw=document.getElementById('adv_bdclnd')?.value.trim()||'';
+  const adv_bdclnd = adv_bdclnd_raw ? (adv_bdclnd_raw.startsWith('BDCLND=')? adv_bdclnd_raw : `BDCLND=${adv_bdclnd_raw}`) : '';
+  const payload={link,pwd,bduss:adv_bduss,bdclnd:adv_bdclnd};
   try{
     const res=await fetch('/api/list',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
     if(res.status===405){ throw {retryGet:true}; }
@@ -93,6 +112,8 @@ async function apiList(link,pwd){
     if(e && e.retryGet){
       const u=new URL('/api/list',location.origin);
       u.searchParams.set('link',link); if(pwd) u.searchParams.set('pwd',pwd);
+      if(adv_bduss) u.searchParams.set('bduss',adv_bduss);
+      if(adv_bdclnd) u.searchParams.set('bdclnd',adv_bdclnd);
       const res2=await fetch(u.toString(),{method:'GET'});
       const json2=res2.ok ? await res2.json() : null;
       return {res:res2,json:json2};
@@ -140,6 +161,12 @@ async function playFile(surl,fs_id,pwd){
   playMsg.textContent='';
 }
  document.getElementById('parseBtn').addEventListener('click',fetchList);
+ document.getElementById('advToggle').addEventListener('click',()=>{
+   const box=document.getElementById('adv');
+   const btn=document.getElementById('advToggle');
+   if(box.style.display==='none'){ box.style.display='grid'; btn.textContent='收起'; }
+   else{ box.style.display='none'; btn.textContent='展开'; }
+ });
 </script>
 </body>
 </html>
