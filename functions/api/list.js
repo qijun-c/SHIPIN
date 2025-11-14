@@ -2,25 +2,37 @@ export async function onRequestPost(context){
   const { request } = context;
   const { link, pwd = "", dir = "/" } = await request.json();
   const surl = extractSurl(link||"");
+  const surlToken = surl.replace(/^1/, "");
   if(!surl) return json({errno:400,message:"invalid surl"},400);
   const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
   let cookies = "";
   let randsk = "";
   if(pwd){
     const v = await verifyPwd(surl,pwd,ua);
-    if(v.errno!==0) return json({errno:v.errno,message:v.message||"verify failed"},400);
+    if(v.errno!==0) return json({errno:v.errno,message:v.message||"verify failed", stage:"verify"},400);
     randsk = v.randsk||"";
     if(v.bdclnd) cookies = mergeCookie(cookies,v.bdclnd);
   }
-  const page = await fetch(`https://pan.baidu.com/s/${encodeURIComponent(surl)}`,{headers:{"user-agent":ua,"referer":"https://pan.baidu.com/",...(cookies?{"cookie":cookies}:{})}});
+  const page = await fetch(`https://pan.baidu.com/s/1${encodeURIComponent(surlToken)}`,{headers:{"user-agent":ua,"referer":`https://pan.baidu.com/s/1${surlToken}`,...(cookies?{"cookie":cookies}:{})}});
   const html = await page.text();
   const yun = extractYunData(html);
   if(!yun) return json({errno:500,message:"failed to parse share page"},500);
   const { shareid, uk } = yun;
   const listUrl = `https://pan.baidu.com/share/list?shareid=${shareid}&uk=${uk}&order=name&desc=0&showempty=0&web=1&page=1&num=1000&dir=${encodeURIComponent(dir)}`;
-  const lr = await fetch(listUrl,{headers:{"user-agent":ua,"referer":`https://pan.baidu.com/s/${surl}`,...(cookies?{"cookie":cookies}:{})}});
-  const lj = await lr.json();
-  if(lj.errno!==0) return json({errno:lj.errno,message:"list failed"},400);
+  let lr = await fetch(listUrl,{headers:{"user-agent":ua,"referer":`https://pan.baidu.com/s/1${surlToken}`,...(cookies?{"cookie":cookies}:{})}});
+  let lj = await lr.json();
+  if(lj.errno!==0 && lj.errno===9019){
+    // need verify, try once
+    const v2 = await verifyPwd(surl, pwd || "", ua);
+    if(v2 && v2.errno===0 && v2.bdclnd){ cookies = mergeCookie(cookies, v2.bdclnd); }
+    lr = await fetch(listUrl,{headers:{"user-agent":ua,"referer":`https://pan.baidu.com/s/1${surlToken}`,...(cookies?{"cookie":cookies}:{})}});
+    lj = await lr.json();
+    if(lj.errno!==0){
+      return json({errno:lj.errno,errtype:lj.errtype,errmsg:lj.errmsg,message:"list failed after verify", stage:"list-after-verify"},400);
+    }
+  } else if(lj.errno!==0){
+    return json({errno:lj.errno,errtype:lj.errtype,errmsg:lj.errmsg,message:"list failed", stage:"list"},400);
+  }
   const all = Array.isArray(lj.list)?lj.list:[];
   const videos = all.filter(x=>x.isdir===0 && isVideo(x.server_filename)).sort((a,b)=>b.size-a.size);
   return json({errno:0,share:{surl},total:all.length,videos});
@@ -62,8 +74,9 @@ function extractYunData(html){
   return null;
 }
 async function verifyPwd(surl,pwd,ua){
-  const body=`surl=${encodeURIComponent(surl)}&pwd=${encodeURIComponent(pwd)}`;
-  const r=await fetch("https://pan.baidu.com/share/verify",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded; charset=UTF-8","user-agent":ua,"origin":"https://pan.baidu.com","referer":`https://pan.baidu.com/share/init?surl=${surl}`},body});
+  const surlParam = surl.startsWith('1') ? surl.slice(1) : surl;
+  const body=`surl=${encodeURIComponent(surlParam)}&pwd=${encodeURIComponent(pwd)}`;
+  const r=await fetch("https://pan.baidu.com/share/verify",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded; charset=UTF-8","user-agent":ua,"origin":"https://pan.baidu.com","referer":`https://pan.baidu.com/share/init?surl=${surlParam}`},body});
   const text=await r.text();
   let data; try{data=JSON.parse(text)}catch{data={errno:-1}};
   if(data.errno!==0) return {errno:data.errno||-1,message:"wrong pwd or need captcha"};
