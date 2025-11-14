@@ -72,23 +72,41 @@ function extractSurl(text){
   const m3=text.match(/([\w-]{6,})/); if(m3) return m3[1];
   return text.trim();
 }
+async function apiList(link,pwd){
+  const payload={link,pwd};
+  try{
+    const res=await fetch('/api/list',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+    if(res.status===405){ throw {retryGet:true}; }
+    const json = res.ok ? await res.json() : null;
+    return {res,json};
+  }catch(e){
+    if(e && e.retryGet){
+      const u=new URL('/api/list',location.origin);
+      u.searchParams.set('link',link); if(pwd) u.searchParams.set('pwd',pwd);
+      const res2=await fetch(u.toString(),{method:'GET'});
+      const json2=res2.ok ? await res2.json() : null;
+      return {res:res2,json:json2};
+    }
+    throw e;
+  }
+}
 async function fetchList(){
   const link=document.getElementById('link').value.trim();
   const pwd=document.getElementById('pwd').value.trim();
   const msg=document.getElementById('msg');
   msg.textContent='解析中…';
-  const res=await fetch('/api/list',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({link,pwd})});
+  const {res,data,json}=await (async()=>{ const r=await apiList(link,pwd); return {res:r.res,data:r.json,json:r.json}; })();
   if(!res.ok){msg.innerHTML='<span class="error">解析失败 '+res.status+'</span>';return}
-  const data=await res.json();
-  if(data.errno!==0){msg.innerHTML='<span class="error">'+(data.message||'解析失败')+'</span>';return}
-  msg.innerHTML='<span class="ok">已解析：'+data.total+' 个文件，视频 '+data.videos.length+' 个</span>';
+  const dataJson = json || {};
+  if(dataJson.errno!==0){msg.innerHTML='<span class="error">'+(dataJson.message||'解析失败')+'</span>';return}
+  msg.innerHTML='<span class="ok">已解析：'+dataJson.total+' 个文件，视频 '+dataJson.videos.length+' 个</span>';
   const list=document.getElementById('list'); list.innerHTML='';
   const empty=document.getElementById('empty');
-  if(!data.videos.length){empty.style.display='block';return}else empty.style.display='none';
-  data.videos.forEach(f=>{
+  if(!dataJson.videos.length){empty.style.display='block';return}else empty.style.display='none';
+  dataJson.videos.forEach(f=>{
     const li=document.createElement('li'); li.className='item';
     const title=document.createElement('div'); title.textContent=f.server_filename+' ('+formatSize(f.size)+')';
-    const btn=document.createElement('button'); btn.textContent='播放'; btn.onclick=()=>playFile(data.share.surl,f.fs_id,document.getElementById('pwd').value.trim());
+    const btn=document.createElement('button'); btn.textContent='播放'; btn.onclick=()=>playFile(dataJson.share.surl,f.fs_id,document.getElementById('pwd').value.trim());
     li.appendChild(title); li.appendChild(btn); list.appendChild(li);
   });
 }
