@@ -96,7 +96,15 @@ async function fetchList(){
   const msg=document.getElementById('msg');
   msg.textContent='解析中…';
   const {res,data,json}=await (async()=>{ const r=await apiList(link,pwd); return {res:r.res,data:r.json,json:r.json}; })();
-  if(!res.ok){msg.innerHTML='<span class="error">解析失败 '+res.status+'</span>';return}
+  if(!res.ok){
+    let details = '';
+    try{
+      const j = json || await res.clone().json();
+      if(j){ details = `（stage=${j.stage||'-'}, errno=${j.errno||'-'}, errtype=${j.errtype||'-'}, errmsg=${j.errmsg||j.message||'-'}）`; }
+    }catch{}
+    msg.innerHTML='<span class="error">解析失败 '+res.status+ (details? ' '+details : '') +'</span>';
+    return;
+  }
   const dataJson = json || {};
   if(dataJson.errno!==0){msg.innerHTML='<span class="error">'+(dataJson.message||'解析失败')+'</span>';return}
   msg.innerHTML='<span class="ok">已解析：'+dataJson.total+' 个文件，视频 '+dataJson.videos.length+' 个</span>';
