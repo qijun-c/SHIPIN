@@ -1,14 +1,16 @@
 export async function onRequestPost(context){
-  const { request } = context;
+  const { request, env } = context;
   const { link, pwd = "", dir = "/" } = await request.json();
   const surl = extractSurl(link||"");
   const surlToken = surl.replace(/^1/, "");
   if(!surl) return json({errno:400,message:"invalid surl"},400);
   const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
   let cookies = "";
+  const BDUSS = (env && env.BDUSS) ? `BDUSS=${env.BDUSS}` : "";
+  if(BDUSS) cookies = mergeCookie(cookies, BDUSS);
   let randsk = "";
   if(pwd){
-    const v = await verifyPwd(surl,pwd,ua);
+    const v = await verifyPwd(surl,pwd,ua,cookies);
     if(v.errno!==0) return json({errno:v.errno,message:v.message||"verify failed", stage:"verify"},400);
     randsk = v.randsk||"";
     if(v.bdclnd) cookies = mergeCookie(cookies,v.bdclnd);
@@ -73,10 +75,18 @@ function extractYunData(html){
   if(r2){try{return JSON.parse(r2[1]);}catch(e){}}
   return null;
 }
-async function verifyPwd(surl,pwd,ua){
+async function verifyPwd(surl,pwd,ua,cookies0){
   const surlParam = surl.startsWith('1') ? surl.slice(1) : surl;
   const body=`surl=${encodeURIComponent(surlParam)}&pwd=${encodeURIComponent(pwd)}`;
-  const r=await fetch("https://pan.baidu.com/share/verify",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded; charset=UTF-8","user-agent":ua,"origin":"https://pan.baidu.com","referer":`https://pan.baidu.com/share/init?surl=${surlParam}`},body});
+  const r=await fetch("https://pan.baidu.com/share/verify",{method:"POST",headers:{
+    "content-type":"application/x-www-form-urlencoded; charset=UTF-8",
+    "accept":"application/json, text/javascript, */*; q=0.01",
+    "x-requested-with":"XMLHttpRequest",
+    "user-agent":ua,
+    "origin":"https://pan.baidu.com",
+    "referer":`https://pan.baidu.com/share/init?surl=${surlParam}`,
+    ...(cookies0?{"cookie":cookies0}:{})
+  },body});
   const text=await r.text();
   let data; try{data=JSON.parse(text)}catch{data={errno:-1}};
   if(data.errno!==0) return {errno:data.errno||-1,message:"wrong pwd or need captcha"};
